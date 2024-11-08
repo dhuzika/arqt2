@@ -1,5 +1,5 @@
 const express = require('express');
-const axios = require('axios')
+const axios = require('axios');
 const app = express();
 app.use(express.json());
 
@@ -7,38 +7,48 @@ const baseConsulta = {};
 
 const funcoes = {
     LembreteCriado: (lembrete) => {
-        baseConsulta[lembrete.contador] = lembrete;
+        baseConsulta[lembrete.contador] = { ...lembrete, observacoes: [] };
     },
     ObservacaoCriada: (observacao) => {
-        const observacoes = baseConsulta[observacao.lembreteId]["observacoes"] || [];
-        observacoes.push(observacao);
-        baseConsulta[observacao.lembreteId]["observacoes"] = observacoes;
+        const lembrete = baseConsulta[observacao.lembreteId] || { observacoes: [] };
+        lembrete.observacoes.push(observacao);
+        baseConsulta[observacao.lembreteId] = lembrete;
     },
     ObservacaoAtualizada: (observacao) => {
-        const observacoes = baseConsulta[observacao.lembreteId]["observacoes"];
-        const indice = observacoes.findIndex((o) => o.id === observacao.id); 
-        observacoes[indice] = observacao;
+        const lembrete = baseConsulta[observacao.lembreteId];
+        if (lembrete) {
+            const indice = lembrete.observacoes.findIndex((o) => o.id === observacao.id);
+            if (indice !== -1) {
+                lembrete.observacoes[indice] = observacao;
+            }
+        }
     },
 };
 
 app.post('/eventos', (req, res) => {
-    try {
-      funcoes[req.body.tipo](req.body.dados);
-    } catch (err) {}
-      res.status(200).send({ msg: 'ok' });
-    });
+    const { tipo, dados } = req.body;
+    if (funcoes[tipo]) {
+        funcoes[tipo](dados);
+    }
+    res.status(200).send({ msg: 'ok' });
+});
 
 app.get('/lembretes', (req, res) => {
     res.status(200).send(baseConsulta);
 });
 
-app.listen(6000, async() => {
+app.listen(6000, async () => {
     console.log("Consultas. Porta 6000");
-    const resp = await 
-    axios.get("http://localhost:10000/eventos");
-    resp.data.forEach((valor, indice, colecao) => {
-      try{
-        funcoes[valor.tipo](valor.dados);
-      }catch (err) {}
-    });
-  });
+
+    try {
+        const resp = await axios.get("http://barramento-de-eventos:10000/eventos");
+        resp.data.forEach((evento) => {
+            const funcao = funcoes[evento.tipo];
+            if (funcao) {
+                funcao(evento.dados);
+            }
+        });
+    } catch (err) {
+        console.error("Erro ao buscar eventos:", err.message);
+    }
+});
